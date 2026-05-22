@@ -15,10 +15,10 @@ app = FastAPI(title="Ammonia Compressor 7-Set Smart Diagnostics API (Enforced TH
 # เปิดสิทธิ์ CORS ให้หน้าบ้านเชื่อมต่อข้ามโดเมนได้ราบรื่น
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://cpf-frontend-thermo.vercel.app/"],
+    allow_origins=["https://cpf-frontend-thermo.vercel.app"], # ระบุ URL หน้าบ้านให้ตรงเป๊ะ
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], # ระบุ Method ให้ครบ
+    allow_headers=["*"], # ยอมรับทุก Header
 )
 
 # การเชื่อมต่อฐานข้อมูล MongoDB 
