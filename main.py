@@ -16,7 +16,8 @@ app = FastAPI(title="Ammonia Compressor 7-Set Smart Diagnostics API (Enforced TH
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://cpf-frontend-thermo.vercel.app",
-                   "http://127.0.0.1:5500/Frontend/index.html"], # ระบุ URL หน้าบ้านให้ตรงเป๊ะ
+                   "http://127.0.0.1:5500/Frontend/index.html",
+                   "http://127.0.0.1:5500"], # ระบุ URL หน้าบ้านให้ตรงเป๊ะ
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], # ระบุ Method ให้ครบ
     allow_headers=["*"], # ยอมรับทุก Header
