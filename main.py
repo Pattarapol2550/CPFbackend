@@ -8,7 +8,6 @@ from datetime import datetime, timezone, timedelta
 from typing import List
 import CoolProp.CoolProp as CP
 import math
-from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 
 app = FastAPI(title="Ammonia Compressor 7-Set Smart Diagnostics API (Enforced TH Timezone)")
