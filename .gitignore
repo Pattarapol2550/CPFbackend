@@ -1,0 +1,28 @@
+# --- สภาพแวดล้อมและตัวแปรลับ ---
+.env
+.venv/
+venv/
+env/
+__pycache__/
+
+# --- ไฟล์ระบบและไฟล์ชั่วคราว ---
+.DS_Store
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- ฐานข้อมูลและไฟล์ Logs ---
+*.log
+*.db
+*.sqlite3
+data/
+
+# --- ส่วนเสริมสำหรับ VS Code/IDE ---
+.vscode/
+.idea/
+
+# --- ไฟล์อัปโหลด (ถ้ามี) ---
+uploads/
