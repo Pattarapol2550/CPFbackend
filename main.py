@@ -15,7 +15,7 @@ app = FastAPI(title="Ammonia Compressor 7-Set Smart Diagnostics API (Enforced TH
 # เปิดสิทธิ์ CORS ให้หน้าบ้านเชื่อมต่อข้ามโดเมนได้ราบรื่น
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://cpf-frontend-thermo.vercel.app/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
