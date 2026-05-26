@@ -32,24 +32,24 @@ class CompressorDataInput(BaseModel):
     timestamp: Optional[datetime] = None
     run_hours: Optional[float] = Field(default=0, ge=0)
     slide_valve_percent: float = Field(..., ge=0, le=100)
-    sp_kg: float 
+    sp_kg: float = Field(..., gt=-2)
     st_c: float
-    dp_kg: float 
+    dp_kg: float = Field(..., gt=0)
     dt_c: float
     current_amp: float = Field(..., ge=0)
     op_kg: float = Field(..., ge=0)
     ot_c: float
     oil_filter_drop: float
-    liquid_temp_c: Optional[float] = 0.0
+    liquid_temp_c: Optional[float] = 0.0 # Optional: ถ้า 0 จะใช้ค่าอิ่มตัวจากแรงดัน
     fan_pump_kw: Optional[float] = 0.0
     evaporator_room_temp_c: Optional[float] = 0.0
     condenser_temp_c: Optional[float] = 0.0
 
 COMPRESSOR_SPECS = {
     "COMP-01": {"name": "High Stage #1", "max_displacement_m3h": 650.0},
-    "COMP-02": {"name": "Booster #2",     "max_displacement_m3h": 450.0},
-    "COMP-03": {"name": "Booster #3",     "max_displacement_m3h": 450.0},
-    "COMP-04": {"name": "Booster #4",     "max_displacement_m3h": 450.0},
+    "COMP-02": {"name": "Booster #2", "max_displacement_m3h": 450.0},
+    "COMP-03": {"name": "Booster #3", "max_displacement_m3h": 450.0},
+    "COMP-04": {"name": "Booster #4", "max_displacement_m3h": 450.0},
     "COMP-05": {"name": "High Stage #5", "max_displacement_m3h": 650.0},
     "COMP-06": {"name": "High Stage #6", "max_displacement_m3h": 650.0},
     "COMP-07": {"name": "High Stage #7", "max_displacement_m3h": 650.0},
@@ -58,43 +58,82 @@ COMPRESSOR_SPECS = {
 # --- CORE LOGIC ---
 def diagnose_compressor(data: CompressorDataInput) -> dict:
     fluid = 'Ammonia'
-    voltage = 380.0
-    power_factor = 0.85
-    volumetric_efficiency = 0.85
     
-    # ดึงค่า Displacement ตามรุ่นเครื่อง
-    spec = COMPRESSOR_SPECS.get(data.compressor_id, {"max_displacement_m3h": 500.0})
+    # --- DEMO VALUES (ค่ามาตรฐานที่ใช้คำนวณเบื้องต้น) ---
+    voltage = 380.0 
+    power_factor = 0.85 
+    volumetric_efficiency = 0.85 
+    # ----------------------------------------------------
+    
+    spec = COMPRESSOR_SPECS.get(data.compressor_id, {"max_displacement_m3h": 500.0}) #demo value
     max_displacement = spec["max_displacement_m3h"]
     
-    p_suc_pa = (data.sp_kg * 98066.5) + 101325
-    p_dis_pa = (data.dp_kg * 98066.5) + 101325
-    t_suc_k = data.st_c + 273.15
-    t_dis_k = data.dt_c + 273.15
-    
-    h1 = CP.PropsSI('H', 'P', p_suc_pa, 'T', t_suc_k, fluid)
-    h2 = CP.PropsSI('H', 'P', p_dis_pa, 'T', t_dis_k, fluid)
-    h_liq = CP.PropsSI('H', 'P', p_dis_pa, 'Q', 0, fluid)
-    
-    v_suction = CP.PropsSI('V', 'P', p_suc_pa, 'T', t_suc_k, fluid)
-    mass_flow = (((max_displacement * (data.slide_valve_percent / 100)) / 3600) * volumetric_efficiency) / v_suction
-    ql_kw = mass_flow * ((h1 - h_liq) / 1000)
-    power_kw = (math.sqrt(3) * voltage * data.current_amp * power_factor) / 1000
-    
-    # Logic Checks
-    t_sat_suc = CP.PropsSI('T', 'P', p_suc_pa, 'Q', 1, fluid) - 273.15
-    superheat_suc = data.st_c - t_sat_suc
-    sensor_status = "Normal" if 2 <= superheat_suc <= 20 else "Warning"
-    
-    approach_cond = (CP.PropsSI('T', 'P', p_dis_pa, 'Q', 1, fluid) - 273.15) - data.condenser_temp_c
-    condenser_status = "Normal" if approach_cond < 15 else "Warning"
+    try:
+        p_suc_pa = (data.sp_kg * 98066.5) + 101325
+        p_dis_pa = (data.dp_kg * 98066.5) + 101325
+        t_suc_k = data.st_c + 273.15
+        t_dis_k = data.dt_c + 273.15
+        
+        # 1. Thermodynamics
+        h1 = CP.PropsSI('H', 'P', p_suc_pa, 'T', t_suc_k, fluid)
+        h2 = CP.PropsSI('H', 'P', p_dis_pa, 'T', t_dis_k, fluid)
 
-    return {
-        "calculated_ql_kw": round(ql_kw, 2),
-        "power_kw": round(power_kw, 2),
-        "actual_cop": round(ql_kw / power_kw if power_kw > 0 else 0, 2),
-        "superheat_suc": round(superheat_suc, 2),
-        "status": {"sensor": sensor_status, "condenser": condenser_status}
-    }
+        
+        # 2. การคำนวณ h3 (Liquid Enthalpy)
+        # ถ้ามี Liquid Temp ให้ใช้ค่าจริง ถ้าไม่มีจะใช้ค่าอิ่มตัวจากแรงดัน (Saturated)
+        if data.liquid_temp_c and data.liquid_temp_c > 0:
+            h_liq = CP.PropsSI('H', 'P', p_dis_pa, 'T', data.liquid_temp_c + 273.15, fluid)
+        else:
+            h_liq = CP.PropsSI('H', 'P', p_dis_pa, 'Q', 0, fluid)
+        
+        # CyCle COP calculate
+        cycle_cop = (h1 - h_liq) / (h2 - h1) if (h2 - h1) > 0 else 0
+
+        # 3. Mass Flow & Capacity
+        v_suction = CP.PropsSI('V', 'P', p_suc_pa, 'T', t_suc_k, fluid)
+        mass_flow = (((max_displacement * (data.slide_valve_percent / 100)) / 3600) * volumetric_efficiency) / v_suction
+        ql_kw = mass_flow * ((h1 - h_liq) / 1000)
+        
+        # 4. Power & COP
+        power_kw = (math.sqrt(3) * voltage * data.current_amp * power_factor) / 1000
+
+        #System COP
+        system_total_kw = power_kw + data.fan_pump_kw
+        system_cop = ql_kw / system_total_kw if system_total_kw > 0.1 else 0
+        
+        # 5. Logic Checks
+        t_sat_suc = CP.PropsSI('T', 'P', p_suc_pa, 'Q', 1, fluid) - 273.15
+        superheat_suc = data.st_c - t_sat_suc
+        sensor_status = "Normal" if 2 <= superheat_suc <= 20 else "Warning"
+        
+        # ตรวจสอบ condenser_temp_c ก่อนคำนวณป้องกัน Error
+        if data.condenser_temp_c > 0:
+            approach_cond = (CP.PropsSI('T', 'P', p_dis_pa, 'Q', 1, fluid) - 273.15) - data.condenser_temp_c
+            condenser_status = "Normal" if (approach_cond < 15) else "Warning"
+        else:
+            condenser_status = "Normal" # กรณีไม่มีข้อมูลคอนเดนเซอร์
+
+            
+
+        # แก้ไขส่วน return ใน main.py ให้มีโครงสร้างที่หน้าเว็บต้องการ
+        return {
+    "calculated_ql_kw": round(ql_kw, 2),
+    "power_kw": round(power_kw, 2),
+    "actual_cop": round(ql_kw / power_kw if power_kw > 0.1 else 0, 2),
+    "cycle_cop": round(cycle_cop, 2),
+    "system_cop": round(system_cop, 2),
+    "superheat_suc": round(superheat_suc, 2),
+    "compressor_name_spec": spec["name"],
+    # ปรับตรงนี้เพื่อให้ buildAlarmLog ใน index.html ทำงานได้
+    "systems": {
+        "sensor": {"status": sensor_status, "text": f"Superheat {round(superheat_suc, 1)} K"},
+        "condenser": {"status": condenser_status, "text": f"Approach Temp {round(approach_cond, 1) if 'approach_cond' in locals() else 0} °C"},
+        "oil": {"status": "Normal", "text": "Oil pressure stable"} # เพิ่มค่า default สำหรับระบบน้ำมัน
+    },
+    "status": {"sensor": sensor_status, "condenser": condenser_status}
+}
+    except Exception:
+        return {"calculated_ql_kw": 0, "power_kw": 0, "actual_cop": 0, "superheat_suc": 0, "status": {"sensor": "Error", "condenser": "Error"}}
 
 # --- API ENDPOINTS ---
 @app.post("/api/metrics")
@@ -111,8 +150,8 @@ async def save_data(payload: CompressorDataInput):
         "inputs_snapshot": payload.dict(exclude={'compressor_id', 'timestamp', 'run_hours'}),
         "diagnosis": diag
     }
-    result = await metrics_collection.insert_one(document)
-    return {"status": "Success", "id": str(result.inserted_id)}
+    await metrics_collection.insert_one(document)
+    return {"status": "Success", "analysis": diag}
 
 @app.get("/api/metrics/{compressor_id}")
 async def get_dashboard_data(compressor_id: str, limit: int = 200):
